@@ -1,6 +1,17 @@
-version : "3"
-
+name: auth-service
 services:
+  # app:
+    # build: .
+    # container_name: go-auth-service
+    # ports: 
+      # - "8080:8080"
+    # volumes:
+      # - .env:/app/.env
+# 
+    # depends_on:
+      # - mongodb
+      # - redis
+
   mongodb:
     image: mongo:latest
     volumes: 
