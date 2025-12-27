@@ -10,6 +10,7 @@ type Config struct {
 	MongoURI      string
 	AccessSecret  string
 	RefreshSecret string
+	RedisURI      string
 }
 
 func Load() *Config {
@@ -18,6 +19,7 @@ func Load() *Config {
 		MongoURI:      getEnv("MONGO_URI"),
 		AccessSecret:  getEnv("ACCESS_SECRET"),
 		RefreshSecret: getEnv("REFRESH_SECRET"),
+		RedisURI:      getEnv("REDIS_URI"),
 	}
 
 	// if c.AccessSecret == "" || c.RefreshSecret == "" {

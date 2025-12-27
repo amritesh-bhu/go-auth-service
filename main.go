@@ -19,7 +19,7 @@ func main() {
 	defer stop()
 
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using system env vars")
+		log.Println("No .env file found, using system env vars", err)
 	}
 
 	// Connect to MongoDB
@@ -34,6 +34,14 @@ func main() {
 	}
 	domain.UsersCollection = DB.Collection("users")
 	log.Println("MongoDB connected...")
+
+	// connect to Redis
+	rdb, err := config.NewRedisClient(ctx)
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		log.Fatal("Failed to connect to Redis")
+	} else {
+		log.Println("Redis connected")
+	}
 
 	// Initialize Fiber server
 	server := app.NewServer()
@@ -67,6 +75,9 @@ func main() {
 	if err := client.Disconnect(shutdownCtx); err != nil {
 		log.Println("Error disconnecting MongoDB:", err)
 	}
+
+	//Disconnect Redis
+	rdb.Close()
 
 	log.Println("Server exited properly")
 }
