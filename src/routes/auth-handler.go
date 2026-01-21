@@ -4,8 +4,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-auth-service/src/config"
 	"github.com/go-auth-service/src/domain"
 	"github.com/go-auth-service/src/entities"
+	"github.com/go-auth-service/src/helper"
+	"github.com/go-auth-service/src/middlewares"
+	"github.com/go-auth-service/src/services"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -43,11 +47,61 @@ func AuthHandler(router fiber.Router) {
 			c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		msg, err := domain.LoginUser(ctx, &cred)
+		user, err := domain.LoginUser(ctx, &cred)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		return c.Status(200).JSON(fiber.Map{"message": msg})
+		refreshKey := config.Load().RefreshSecret
+		refreshToken, err := helper.GenerateRefreshToken(ctx, user.ID.Hex(), refreshKey)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to generate refresh token"})
+		}
+
+		sessionId, err := services.SaveRefreshToken(ctx, refreshToken, user.ID.Hex())
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err})
+		}
+
+		accessKey := config.Load().AccessSecret
+		accessToken, err := helper.GenerateAccessToken(ctx, user.ID.Hex(), accessKey)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to generate access token"})
+		}
+
+		c.Cookie(&fiber.Cookie{
+			Name:     "sessionId",
+			Value:    sessionId,
+			Secure:   true,
+			HTTPOnly: true,
+			SameSite: "Strict",
+			Path:     "/",
+			Expires:  time.Now().Add(7 * 24 * time.Hour),
+		})
+
+		return c.Status(200).JSON(fiber.Map{"accessToken": accessToken})
+	})
+
+	auth.Post("/logout", middlewares.UserSession, func(c *fiber.Ctx) error {
+		ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
+		defer cancel()
+
+		sessionId := c.Get("sessionId")
+		userId := c.Get("userId")
+		err := services.DeleteRefreshToken(ctx, sessionId, userId)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "invalid token"})
+		}
+
+		c.Cookie(&fiber.Cookie{
+			Name:     "sessionId",
+			Value:    "",
+			Secure:   true,
+			HTTPOnly: true,
+			SameSite: "None",
+			Path:     "/",
+			Expires:  time.Now().Add(-time.Hour),
+		})
+		return c.Status(200).JSON(fiber.Map{"message": "Logged out successfully!"})
 	})
 }
