@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-auth-service/src/config"
 	"github.com/go-auth-service/src/domain"
 	"github.com/go-auth-service/src/entities"
 	"github.com/go-auth-service/src/helper"
@@ -17,7 +16,7 @@ func AuthHandler(router fiber.Router) {
 
 	auth := router.Group("/auth")
 
-	auth.Post("/register", func(c *fiber.Ctx) error {
+	auth.Post("/register", middlewares.RateLimiter(), func(c *fiber.Ctx) error {
 
 		ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
 		defer cancel()
@@ -36,7 +35,7 @@ func AuthHandler(router fiber.Router) {
 		return c.Status(200).JSON(fiber.Map{"message": "User created successfully!", "data": result})
 	})
 
-	auth.Post("/login", func(c *fiber.Ctx) error {
+	auth.Post("/login", middlewares.RateLimiter(), func(c *fiber.Ctx) error {
 
 		ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
 		defer cancel()
@@ -52,21 +51,11 @@ func AuthHandler(router fiber.Router) {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		refreshKey := config.Load().RefreshSecret
-		refreshToken, err := helper.GenerateRefreshToken(ctx, user.ID.Hex(), refreshKey)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "failed to generate refresh token"})
-		}
+		userId := user.ID.Hex()
 
-		sessionId, err := services.SaveRefreshToken(ctx, refreshToken, user.ID.Hex())
+		accessToken, sessionId, err := helper.GetTokens(ctx, userId)
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err})
-		}
-
-		accessKey := config.Load().AccessSecret
-		accessToken, err := helper.GenerateAccessToken(ctx, user.ID.Hex(), accessKey)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "failed to generate access token"})
+			c.Status(500).JSON(fiber.Map{"error": err})
 		}
 
 		c.Cookie(&fiber.Cookie{
@@ -82,12 +71,12 @@ func AuthHandler(router fiber.Router) {
 		return c.Status(200).JSON(fiber.Map{"accessToken": accessToken})
 	})
 
-	auth.Post("/logout", middlewares.UserSession, func(c *fiber.Ctx) error {
-		ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
-		defer cancel()
+	auth.Post("/logout", middlewares.UserSession(), middlewares.RateLimiter(), func(c *fiber.Ctx) error {
 
-		sessionId := c.Get("sessionId")
-		userId := c.Get("userId")
+		sessionId := c.Locals("sessionId").(string)
+		userId := c.Locals("userId").(string)
+		ctx := c.Locals("ctx").(context.Context)
+
 		err := services.DeleteRefreshToken(ctx, sessionId, userId)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": "invalid token"})
@@ -103,5 +92,54 @@ func AuthHandler(router fiber.Router) {
 			Expires:  time.Now().Add(-time.Hour),
 		})
 		return c.Status(200).JSON(fiber.Map{"message": "Logged out successfully!"})
+	})
+
+	auth.Post("/multiple-device-logout", middlewares.UserSession(), middlewares.RateLimiter(), func(c *fiber.Ctx) error {
+
+		userId := c.Locals("userId").(string)
+		ctx := c.Locals("ctx").(context.Context)
+
+		err := services.LogOutFromMultipleDevice(ctx, userId)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err})
+		}
+		c.Cookie(&fiber.Cookie{
+			Name:     "sessionId",
+			Value:    "",
+			Secure:   true,
+			HTTPOnly: true,
+			SameSite: "None",
+			Expires:  time.Now().Add(-time.Hour),
+		})
+		return c.Status(200).JSON(fiber.Map{"message": "Logged out successfully!"})
+	})
+
+	auth.Post("/refresh-tokens", middlewares.UserSession(), middlewares.RateLimiter(), func(c *fiber.Ctx) error {
+
+		userId := c.Locals("userId").(string)
+		sessionId := c.Locals("sessionId").(string)
+		ctx := c.Locals("ctx").(context.Context)
+
+		err := services.DeleteRefreshToken(ctx, sessionId, userId)
+		if err != nil {
+			c.Status(500).JSON(fiber.Map{"error": err})
+		}
+
+		accessToken, sessionId, err := helper.GetTokens(ctx, userId)
+		if err != nil {
+			c.Status(500).JSON(fiber.Map{"error": err})
+		}
+
+		c.Cookie(&fiber.Cookie{
+			Name:     "sessionId",
+			Value:    sessionId,
+			SameSite: "Strict",
+			HTTPOnly: true,
+			Secure:   true,
+			Path:     "/",
+			Expires:  time.Now().Add(7 * 24 * time.Hour),
+		})
+
+		return c.Status(200).JSON(fiber.Map{"accessToken": accessToken})
 	})
 }

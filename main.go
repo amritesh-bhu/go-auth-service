@@ -36,8 +36,8 @@ func main() {
 	log.Println("MongoDB connected...")
 
 	// connect to Redis
-	rdb, err := config.NewRedisClient(ctx)
-	if err := rdb.Ping(ctx).Err(); err != nil {
+	Rdb, err := config.NewRedisClient(ctx)
+	if err := Rdb.Ping(ctx).Err(); err != nil {
 		log.Fatal("Failed to connect to Redis")
 	} else {
 		log.Println("Redis connected")
@@ -77,7 +77,7 @@ func main() {
 	}
 
 	//Disconnect Redis
-	rdb.Close()
+	Rdb.Close()
 
 	log.Println("Server exited properly")
 }

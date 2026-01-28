@@ -53,16 +53,15 @@ func RegisterUser(ctx context.Context, user *entities.User) (*RegisterResponse, 
 	return response, nil
 }
 
-func LoginUser(ctx context.Context, cred *LoginRequest) (string, error) {
-
+func LoginUser(ctx context.Context, cred *LoginRequest) (*entities.User, error) {
 	var user entities.User
 	if err := UsersCollection.FindOne(ctx, bson.M{"emailId": cred.EmailId}).Decode(&user); err != nil {
-		return "", errors.New("User does not exist!")
+		return nil, errors.New("User does not exist!")
 	}
 
 	if helper.ComparePassword(user.Password, cred.Password) {
-		return "", errors.New("Invalid credentials!")
+		return nil, errors.New("Invalid credentials!")
 	}
 
-	return "Logged in successfully!", nil
+	return &user, nil
 }
